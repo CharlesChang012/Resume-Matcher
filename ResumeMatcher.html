@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Resume Matcher</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Concise Light Mode (Black and White) Styles */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9f9f9; /* Light background */
+            display: flex;
+            justify-content: center;
+            padding: 16px;
+            color: #1a1a1a; /* Default text color */
+        }
+        .container {
+            max-width: 900px; /* Wider for better highlight comparison */
+            width: 100%;
+            background: white; /* White container */
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            padding: 24px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        .file-upload-box {
+            border: 2px dashed #ccc; /* Light border */
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+        .file-upload-box:hover {
+            border-color: #3b82f6;
+        }
+        #loading-indicator {
+            display: none;
+            color: #333;
+            font-weight: 600;
+        }
+        .result-card {
+            border-left: 4px solid #1a1a1a; /* High contrast border */
+            padding: 12px;
+            background-color: #f0f0f0; /* Light background for card */
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+        /* Black and White Rank Badge */
+        .rank-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            color: white; /* White text */
+            background-color: #1a1a1a; /* Dark background */
+        }
+        /* Style for the marked text from the API */
+        .highlighted-text mark {
+            background-color: #fffbbf; /* Light yellow marker */
+            color: #1a1a1a; /* Ensure text remains readable */
+            padding: 2px 0;
+            border-radius: 2px; /* Slightly rounded highlights */
+        }
+        /* Adjusted style for human-readable highlighted content */
+        .highlighted-content-display {
+            font-family: 'Inter', sans-serif; /* Use Inter for better readability */
+            font-size: 0.95rem; /* Slightly larger font */
+            line-height: 1.6; /* Increased line height for spacing */
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 15px; /* More padding */
+            background-color: white;
+            border-radius: 4px;
+        }
+        .highlighted-content-display h3 {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            border-bottom: 1px dashed #ccc;
+            padding-bottom: 2px;
+        }
+        /* For the side-by-side layout */
+        .grid-cols-2 > div {
+            background-color: #fcfcfc; /* Slightly off-white background for each panel */
+            border-radius: 6px;
+            padding: 10px;
+            border: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1 class="text-3xl font-extrabold text-gray-900 mb-5 text-center">
+        🎯 AI Resume Matcher
+    </h1>
+    <p class="text-gray-600 mb-5 text-center text-sm">
+        Enter a job description and upload multiple resume PDFs. The AI will compare them and rank the best fit.
+    </p>
+
+    <!-- Job Description Input --><div class="input-group">
+        <label for="job-description" class="block text-sm font-medium text-gray-700 mb-2">
+            1. Job Description (Paste Text Here)
+        </label>
+        <textarea id="job-description" rows="5" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-gray-900 focus:border-gray-900 bg-white text-gray-900" placeholder="e.g., Senior Software Engineer required with 5+ years experience in React, Node.js, and AWS. Must be comfortable leading small teams and performing code reviews..."></textarea>
+    </div>
+
+    <!-- Resume File Upload --><div class="input-group">
+        <label for="resume-files" class="block text-sm font-medium text-gray-700 mb-2">
+            2. Upload Resume Files (PDF only, multiple files allowed)
+        </label>
+        <div class="file-upload-box" onclick="document.getElementById('resume-files').click()">
+            <p class="text-gray-500">Click to select a **folder** containing PDF resumes, or select individual files.</p>
+            <p id="file-count" class="text-sm font-medium mt-1 text-gray-700"></p>
+        </div>
+        <!-- IMPORTANT: Added webkitdirectory attribute for folder selection --><input type="file" id="resume-files" accept=".pdf" multiple class="hidden" onchange="updateFileCount()" webkitdirectory>
+    </div>
+
+    <!-- Process Button and Loading --><div class="flex flex-col items-center mt-5">
+        <button id="match-button" onclick="matchResumes()" class="w-full sm:w-auto px-6 py-2 bg-gray-900 text-white font-semibold rounded-lg shadow-md hover:bg-gray-700 transition duration-150 ease-in-out disabled:opacity-50" disabled>
+            Analyze & Rank Resumes
+        </button>
+        <p id="loading-indicator" class="mt-3 flex items-center text-gray-600">
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Analyzing documents... Please wait.
+        </p>
+    </div>
+
+    <!-- Results Display --><div class="mt-7">
+        <h2 class="text-xl font-bold text-gray-900 border-b border-gray-300 pb-2 mb-4">
+            Analysis Results
+        </h2>
+        <div id="results-area" class="space-y-3">
+            <p id="initial-message" class="text-gray-500 text-sm">
+                Results will appear here after analysis.
+            </p>
+            <!-- Ranked results will be injected here --></div>
+    </div>
+    
+    <!-- Detailed Analysis View (Hidden by default) --><div id="detailed-analysis-view" class="mt-8 border-t pt-4 hidden">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Detailed Match Comparison</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <h3 class="font-semibold text-lg border-b mb-2 pb-1">Job Description (Key Matches Highlighted)</h3>
+                <div id="highlighted-jd" class="highlighted-content-display"></div>
+            </div>
+            <div>
+                <h3 class="font-semibold text-lg border-b mb-2 pb-1">Best Resume Match: <span id="best-match-filename" class="text-base font-normal italic"></span> (Key Matches Highlighted)</h3>
+                <div id="highlighted-resume" class="highlighted-content-display"></div>
+            </div>
+        </div>
+        <button onclick="document.getElementById('detailed-analysis-view').classList.add('hidden')" class="mt-4 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Close Detail View</button>
+    </div>
+</div>
+
+<script>
+    // --- Global API Setup ---
+    // IMPORTANT: When running locally, you MUST replace the empty string below
+    // with your actual Google Gemini API Key for the application to work.
+    const apiKey = ""; // <-- PASTE YOUR API KEY HERE
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+    // Helper function for Base64 conversion
+    const fileToBase64 = (file) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]); // Only the data part
+            reader.onerror = error => reject(error);
+            reader.readAsDataURL(file);
+        });
+    };
+
+    // UI State Management
+    const jobDescriptionInput = document.getElementById('job-description');
+    const resumeFilesInput = document.getElementById('resume-files');
+    const matchButton = document.getElementById('match-button');
+    const fileCountDisplay = document.getElementById('file-count');
+    const loadingIndicator = document.getElementById('loading-indicator');
+    const resultsArea = document.getElementById('results-area');
+    const initialMessage = document.getElementById('initial-message');
+    const detailedView = document.getElementById('detailed-analysis-view');
+    const highlightedJdDiv = document.getElementById('highlighted-jd');
+    const highlightedResumeDiv = document.getElementById('highlighted-resume');
+    const bestMatchFilenameSpan = document.getElementById('best-match-filename');
+
+    // Input validation
+    function checkInputs() {
+        const jd = jobDescriptionInput.value.trim();
+        const files = resumeFilesInput.files.length;
+        // Button is enabled if JD is long enough and files are present
+        matchButton.disabled = !(jd.length > 50 && files > 0);
+    }
+
+    jobDescriptionInput.addEventListener('input', checkInputs);
+    resumeFilesInput.addEventListener('change', checkInputs);
+
+    function updateFileCount() {
+        const count = resumeFilesInput.files.length;
+        if (count > 0) {
+            fileCountDisplay.textContent = `${count} PDF resume(s) selected.`;
+        } else {
+            fileCountDisplay.textContent = '';
+        }
+    }
+
+    // Exponential Backoff for API calls
+    async function fetchWithBackoff(url, options, maxRetries = 5) {
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                const response = await fetch(url, options);
+                // Check if the status is not a rate limit error (429)
+                if (response.status !== 429) return response; 
+            } catch (error) {
+                // If it's a network error and we're on the last retry, throw the error
+                if (i === maxRetries - 1) throw error;
+            }
+            // Wait with exponential backoff
+            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        throw new Error("API call failed after multiple retries.");
+    }
+
+    // Main logic to call the Gemini API
+    async function matchResumes() {
+        // Essential check for API Key before proceeding
+        if (apiKey === "") {
+            displayError('API Key Missing', 'Please obtain your own Gemini API key and paste it into the "apiKey" variable in the script section of this file.');
+            return;
+        }
+
+        const jobDescription = jobDescriptionInput.value.trim();
+        const resumeFiles = resumeFilesInput.files;
+
+        if (jobDescription.length < 50 || resumeFiles.length === 0) {
+            displayError('Input Missing', 'Please enter a detailed job description and upload at least one PDF resume.');
+            return;
+        }
+
+        matchButton.disabled = true;
+        loadingIndicator.style.display = 'flex';
+        resultsArea.innerHTML = '';
+        initialMessage.style.display = 'none';
+        detailedView.classList.add('hidden'); // Hide detail view on new analysis
+
+        try {
+            // 1. Convert all PDF files to Base64
+            const base64Promises = Array.from(resumeFiles).map(file => fileToBase64(file));
+            const base64Data = await Promise.all(base64Promises);
+
+            // 2. Construct the parts array for the API payload
+            let parts = [
+                { text: `Job Description: ${jobDescription}\n\n` },
+                { 
+                    text: `Analyze all uploaded resumes against the job description. For each resume, calculate a match percentage (0-100), and write a detailed justification. **When match percentages are close, prioritize the resume that demonstrates deeper contextual relevance (e.g., using required skills in similar industry contexts or showing progression/leadership).** The analysis must consider both raw keyword matching and the contextual evidence of experience. The most critical instruction is: **You MUST assign a unique numerical rank to each resume, starting from 1 (best match) and sequentially incrementing for worse matches (2, 3, 4...).** Also, for the best-ranked resume (Rank 1), return the **COMPLETE, FULL TEXT** of its content and the **COMPLETE, FULL TEXT** of the job description content. For both the job description and the best-ranked resume, only highlight the most highly relevant skills, keywords, and experience phrases using the HTML <mark> tag. Avoid over-highlighting; focus on key alignments. **DO NOT OMIT ANY UNHIGHLIGHTED TEXT OR SECTIONS**. Ensure readability by using HTML formatting: use <h3> for section titles (e.g., 'Summary', 'Experience', 'Skills') and use <br> tags to separate lines, especially after bullet points, to make the text easily scannable.` 
+                }
+            ];
+
+            // Add the PDF files as parts
+            base64Data.forEach((data, index) => {
+                const fileName = resumeFiles[index].name;
+                parts.push({
+                    text: `--- RESUME START: ${fileName} ---`
+                });
+                parts.push({
+                    inlineData: {
+                        mimeType: 'application/pdf',
+                        data: data
+                    }
+                });
+                parts.push({
+                    text: `--- RESUME END: ${fileName} ---`
+                });
+            });
+
+
+            // 3. Define the structured response schema (UNCHANGED)
+            const responseSchema = {
+                type: "OBJECT",
+                properties: {
+                    rankedResumes: {
+                        type: "ARRAY",
+                        description: "A list of ranked resume matches.",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                rank: { type: "INTEGER" },
+                                filename: { type: "STRING" },
+                                matchPercentage: { type: "INTEGER" },
+                                justification: { type: "STRING" }
+                            },
+                            required: ["rank", "filename", "matchPercentage", "justification"]
+                        }
+                    },
+                    highlightedJobDescription: {
+                        type: "STRING",
+                        description: "The full job description text with relevant skills marked using <mark> tags."
+                    },
+                    bestMatchFilename: {
+                        type: "STRING",
+                        description: "The filename of the resume that matched best (Rank #1)."
+                    },
+                    highlightedBestResume: {
+                        type: "STRING",
+                        description: "The content of the best-matched resume with relevant experience marked using <mark> tags."
+                    }
+                },
+                required: ["rankedResumes", "highlightedJobDescription", "highlightedBestResume", "bestMatchFilename"]
+            };
+
+            // 4. Construct the full payload
+            const payload = {
+                contents: [{ parts: parts }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema,
+                    temperature: 0.1
+                },
+                systemInstruction: {
+                    parts: [{ text: "You are an expert HR and Technical Recruiter. Your task is to analyze a job description against multiple resumes (provided as PDFs) and provide a professional, structured ranking and a detailed comparison for the best match." }]
+                }
+            };
+
+            // 5. Call the API
+            const response = await fetchWithBackoff(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            
+            let structuredData = null;
+
+            if (result.candidates && result.candidates.length > 0 &&
+                result.candidates[0].content && result.candidates[0].content.parts &&
+                result.candidates[0].content.parts.length > 0) {
+                const jsonText = result.candidates[0].content.parts[0].text;
+                try {
+                    structuredData = JSON.parse(jsonText);
+                    displayResults(structuredData);
+                } catch (e) {
+                    displayError('Error parsing structured response from AI.', jsonText);
+                }
+            } else {
+                displayError('API response failed or was empty.', JSON.stringify(result));
+            }
+
+
+        } catch (error) {
+            displayError('An unexpected error occurred during API call.', error.message);
+        } finally {
+            matchButton.disabled = false;
+            loadingIndicator.style.display = 'none';
+        }
+    }
+
+    // Function to display the ranked list in the UI
+    function displayResults(data) {
+        const results = data.rankedResumes;
+        // Sort results by rank just in case the model didn't provide them perfectly in order
+        results.sort((a, b) => a.rank - b.rank);
+        
+        resultsArea.innerHTML = ''; // Clear previous results
+
+        results.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'result-card shadow-md'; 
+            
+            // Simplifying percentage color to high-contrast black/gray
+            const percentColor = item.matchPercentage >= 70 ? 'font-extrabold text-gray-900' : 'font-semibold text-gray-500';
+            
+            let detailedMatchButton = '';
+            // Only show the detail button for the rank 1 result
+            if (item.rank === 1) {
+                 detailedMatchButton = `<button onclick="showDetailedAnalysis('${item.filename}')" class="ml-4 px-3 py-1 bg-gray-900 text-white text-xs rounded-full hover:bg-gray-700 transition">View Detailed Match</button>`;
+            }
+
+            card.innerHTML = `
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-base font-semibold text-gray-900 flex items-center">
+                        <span class="rank-badge mr-3">Rank #${item.rank}</span>
+                        ${item.filename}
+                    </h3>
+                    <div class="flex items-center">
+                        <span class="text-lg ${percentColor}">${item.matchPercentage}% Match</span>
+                        ${detailedMatchButton}
+                    </div>
+                </div>
+                <p class="text-sm text-gray-700 mt-2">
+                    ${item.justification}
+                </p>
+            `;
+            resultsArea.appendChild(card);
+        });
+
+        // Store the detailed analysis data globally for the button click
+        window.detailedAnalysisData = data;
+    }
+
+    // Function to show the side-by-side highlighted comparison
+    function showDetailedAnalysis(filename) {
+        const data = window.detailedAnalysisData;
+
+        // Populate the detail view fields
+        bestMatchFilenameSpan.textContent = filename;
+        highlightedJdDiv.innerHTML = data.highlightedJobDescription;
+        highlightedResumeDiv.innerHTML = data.highlightedBestResume;
+        
+        // Show the detail view
+        detailedView.classList.remove('hidden');
+        detailedView.scrollIntoView({ behavior: 'smooth' }); // Scroll to view the details
+    }
+
+    // Function to display errors
+    function displayError(title, detail) {
+        resultsArea.innerHTML = `
+            <div class="p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg" role="alert">
+                <p class="font-bold">${title}</p>
+                <p class="text-sm">Detail: ${detail}</p>
+            </div>
+        `;
+        initialMessage.style.display = 'none';
+        detailedView.classList.add('hidden');
+    }
+</script>
+
+</body>
+</html>
